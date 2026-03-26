@@ -32,12 +32,13 @@ The GitHub Actions workflow builds VICAR including:
 
 ### `build-vicar.yml` (Main)
 
-Primary workflow using Red Hat UBI 8 (Universal Base Image) container.
+Primary workflow using Rocky Linux 8 container.
 
-**Container:** `registry.access.redhat.com/ubi8/ubi:latest`
-- RHEL 8 compatible
-- Matches internal JPL build environment
-- Binary compatible with Oracle Linux 8 and RHEL 8
+**Container:** `rockylinux:8`
+- 100% RHEL 8 binary compatible
+- Free and open source (no subscription required)
+- Full package repository access
+- Compatible with Oracle Linux 8 and RHEL 8 (matches internal JPL build environment)
 
 **Triggers:**
 - Push to `main`, `master`, `develop` branches
@@ -62,12 +63,14 @@ Primary workflow using Red Hat UBI 8 (Universal Base Image) container.
 
 ### Build Environment
 
-The workflow uses Red Hat Universal Base Image 8 (UBI8), which is:
-- ✅ RHEL 8 compatible
-- ✅ Binary compatible with Oracle Linux 8 and CentOS 8
-- ✅ Matches the internal JPL build environment
-- ✅ Freely redistributable
-- ✅ Regularly updated by Red Hat
+The workflow uses Rocky Linux 8, which is:
+- ✅ 100% binary compatible with RHEL 8
+- ✅ Free and open source (community-driven)
+- ✅ No subscription or registration required
+- ✅ Full access to all RHEL 8 packages
+- ✅ Compatible with Oracle Linux 8 (internal JPL builds)
+- ✅ Production-ready and enterprise-grade
+- ✅ Backed by CIQ and community support
 
 ## Build Process
 
@@ -349,7 +352,7 @@ Try the Ubuntu native workflow (`build-vicar-ubuntu.yml`):
 
 | Aspect | Internal (JPL) | GitHub Actions |
 |--------|----------------|----------------|
-| Base Image | Oracle Linux 8 / RHEL 8 | Red Hat UBI 8 (RHEL 8 compatible) |
+| Base Image | Oracle Linux 8 / RHEL 8 | Rocky Linux 8 (RHEL 8 compatible) |
 | Externals | Proprietary + Open source | Open source only |
 | Build Config | PROJ_ALL (all subsystems) | PROJ_OS (open source) |
 | Build Script | `build_open_vicar.csh` | Same |

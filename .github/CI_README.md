@@ -32,15 +32,16 @@ git push origin main
 ## 📦 Workflows
 
 ### `build-vicar.yml` (Main)
-- Uses Red Hat UBI 8 container (RHEL 8 compatible)
+- Uses Rocky Linux 8 container (100% RHEL 8 compatible)
 - Downloads open source externals from GitHub releases
 - Triggers: push, PR, weekly schedule, manual
 - Stores logs and binaries as artifacts
 
 **Build Environment:**
-- Red Hat Universal Base Image 8 (UBI8)
-- RHEL 8 / Oracle Linux 8 / CentOS 8 compatible
+- Rocky Linux 8
+- 100% binary compatible with RHEL 8 / Oracle Linux 8
 - Matches internal JPL build environment
+- Free and open source (no subscription needed)
 
 ## 📊 Monitor Builds
 

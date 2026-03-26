@@ -38,9 +38,10 @@ jobs:
     name: Build VICAR on RHEL 8
     runs-on: ubuntu-latest
     container:
-      # Red Hat UBI 8 (Universal Base Image) - RHEL 8 compatible
-      # Matches internal JPL build environment (Oracle Linux 8 / RHEL 8)
-      image: registry.access.redhat.com/ubi8/ubi:latest
+      # Rocky Linux 8 - 100% RHEL 8 compatible, free and open source
+      # Binary compatible with Oracle Linux 8 and RHEL 8 (matches internal JPL build environment)
+      # Full package repository access, no subscription needed
+      image: rockylinux:8
       options: --privileged
     
     steps:
@@ -56,9 +57,9 @@ jobs:
       
       - name: Install system dependencies
         run: |
-          # Enable CodeReady Builder repository for additional packages
+          # Enable PowerTools repository for additional development packages
           dnf install -y dnf-plugins-core
-          dnf config-manager --set-enabled codeready-builder-for-rhel-8-x86_64-rpms || true
+          dnf config-manager --set-enabled powertools
           
           # Install dependencies
           dnf -y install \
@@ -275,8 +276,8 @@ jobs:
     runs-on: ubuntu-latest
     if: false  # Set to true to enable testing
     container:
-      # Red Hat UBI 8 (same as build job)
-      image: registry.access.redhat.com/ubi8/ubi:latest
+      # Rocky Linux 8 (same as build job)
+      image: rockylinux:8
       options: --privileged
     
     steps:
