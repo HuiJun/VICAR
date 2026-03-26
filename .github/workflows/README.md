@@ -72,6 +72,12 @@ The workflow uses Rocky Linux 8, which is:
 - ✅ Production-ready and enterprise-grade
 - ✅ Backed by CIQ and community support
 
+**Repositories enabled:**
+- BaseOS - Core packages
+- AppStream - Application streams
+- PowerTools - Development packages
+- EPEL - Extra Packages for Enterprise Linux (for libbsd and other extras)
+
 ## Build Process
 
 ```
