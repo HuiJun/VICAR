@@ -425,8 +425,17 @@ jobs:
         with:
           name: vicar-binaries-${{ matrix.config.arch }}
           path: |
-            ${{ github.workspace }}/vos/bin/**
-            ${{ github.workspace }}/vos/lib/**
+            ${{ github.workspace }}/vos/p1/lib/${{ matrix.config.arch }}/
+            ${{ github.workspace }}/vos/p2/lib/${{ matrix.config.arch }}/
+            ${{ github.workspace }}/vos/p3/lib/${{ matrix.config.arch }}/
+            ${{ github.workspace }}/vos/mars/lib/${{ matrix.config.arch }}/
+            ${{ github.workspace }}/vos/gui/lib/${{ matrix.config.arch }}/
+            ${{ github.workspace }}/vos/vids/lib/${{ matrix.config.arch }}/
+            ${{ github.workspace }}/vos/vrdi/lib/${{ matrix.config.arch }}/
+            ${{ github.workspace }}/vos/crumbs/bin/${{ matrix.config.arch }}/
+            ${{ github.workspace }}/vos/tae53/lib/
+            ${{ github.workspace }}/vos/lib/${{ matrix.config.arch }}/
+            ${{ github.workspace }}/vos/olb/${{ matrix.config.arch }}/
           retention-days: 7
           if-no-files-found: error
       
