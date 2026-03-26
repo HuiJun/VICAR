@@ -62,6 +62,27 @@ jobs:
           fetch-depth: 1  # Shallow clone for faster checkout
           persist-credentials: false
           submodules: false  # Don't initialize submodules
+        continue-on-error: true  # Continue even if submodule cleanup fails
+      
+      - name: Fix submodule configuration
+        run: |
+          # Remove submodule configuration if it exists and is causing issues
+          if [ -f .gitmodules ]; then
+            echo "Found .gitmodules, removing it to prevent issues"
+            rm -f .gitmodules
+          fi
+          
+          # Remove git submodule config
+          git config --local --remove-section submodule.vos/vicar_gdalplugin 2>/dev/null || true
+          
+          # Verify checkout succeeded
+          if [ ! -d "vos" ]; then
+            echo "ERROR: vos directory not found after checkout!"
+            exit 1
+          fi
+          
+          echo "Repository checked out successfully"
+          ls -la
       
       - name: Pull LFS files
         run: |
