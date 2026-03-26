@@ -29,7 +29,7 @@ on:
         default: false
 
 env:
-  V2TOP: /usr/local/vicar/dev/vos
+  V2TOP: ${{ github.workspace }}/vos
   VICSYS: DEVELOPMENT
   GIT_LFS_SKIP_SMUDGE: 1
 
@@ -124,19 +124,27 @@ jobs:
           rm -f /bin/csh && ln -s /bin/tcsh /bin/csh
           ln -s /usr/include/tirpc/rpc/rpc.h /usr/include/rpc/rpc.h
           
-          # Create VICAR directory structure
-          mkdir -p /usr/local/vicar/dev
-          cp -r $GITHUB_WORKSPACE /usr/local/vicar/dev
+          # The checkout action puts files in $GITHUB_WORKSPACE
+          # We need to set up V2TOP to point to the vos directory
+          echo "GITHUB_WORKSPACE is: $GITHUB_WORKSPACE"
+          ls -la $GITHUB_WORKSPACE
+          
+          # Verify vos directory exists
+          if [ ! -d "$GITHUB_WORKSPACE/vos" ]; then
+            echo "ERROR: vos directory not found in workspace!"
+            exit 1
+          fi
           
           # Set permissions
-          chmod -R +rw /usr/local/vicar/
-          chmod -R +X /usr/local/vicar/
+          chmod -R +rw $GITHUB_WORKSPACE
+          chmod -R +X $GITHUB_WORKSPACE
       
       - name: Download VICAR externals
         env:
           EXTERNAL_VERSION: ${{ github.event.inputs.external_version || '5.0' }}
         run: |
-          cd /usr/local/vicar
+          # Download externals to parent directory of vos
+          cd $GITHUB_WORKSPACE
           
           echo "Downloading VICAR externals version ${EXTERNAL_VERSION}..."
           curl -L -o vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz \
@@ -155,7 +163,7 @@ jobs:
           set -x
       
       - name: Build VICAR
-        working-directory: /usr/local/vicar/dev/vos
+        working-directory: ${{ github.workspace }}/vos
         run: |
           # Make scripts executable
           chmod +x util/*.csh
@@ -169,7 +177,7 @@ jobs:
       
       - name: Check build logs for errors
         if: always()
-        working-directory: /usr/local/vicar/dev/vos
+        working-directory: ${{ github.workspace }}/vos
         run: |
           echo "=== Checking build logs for errors ==="
           
@@ -198,7 +206,7 @@ jobs:
       
       - name: Create build summary
         if: always()
-        working-directory: /usr/local/vicar/dev/vos
+        working-directory: ${{ github.workspace }}/vos
         run: |
           echo "=== VICAR Build Summary ===" > build_summary.txt
           echo "Build Date: $(date)" >> build_summary.txt
@@ -229,7 +237,7 @@ jobs:
           
           echo "" >> build_summary.txt
           echo "=== Disk Usage ===" >> build_summary.txt
-          du -sh /usr/local/vicar 2>/dev/null >> build_summary.txt || echo "Could not determine disk usage"
+          du -sh $GITHUB_WORKSPACE 2>/dev/null >> build_summary.txt || echo "Could not determine disk usage"
           
           cat build_summary.txt
       
@@ -239,10 +247,10 @@ jobs:
         with:
           name: vicar-build-logs
           path: |
-            /usr/local/vicar/dev/vos/build_*.log
-            /usr/local/vicar/dev/vos/fetch_*.log
-            /usr/local/vicar/dev/vos/build_summary.txt
-            /usr/local/vicar/dev/vos/LOG
+            ${{ github.workspace }}/vos/build_*.log
+            ${{ github.workspace }}/vos/fetch_*.log
+            ${{ github.workspace }}/vos/build_summary.txt
+            ${{ github.workspace }}/vos/LOG
           retention-days: 30
           if-no-files-found: warn
       
@@ -252,8 +260,8 @@ jobs:
         with:
           name: vicar-binaries
           path: |
-            /usr/local/vicar/dev/vos/bin/
-            /usr/local/vicar/dev/vos/lib/
+            ${{ github.workspace }}/vos/bin/
+            ${{ github.workspace }}/vos/lib/
           retention-days: 7
           if-no-files-found: warn
       
@@ -292,19 +300,19 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: vicar-binaries
-          path: /usr/local/vicar/dev/vos/
+          path: ${{ github.workspace }}/vos/
       
       - name: Setup environment
         run: |
           # Setup environment for testing
           ln -s /bin/tcsh /bin/csh
-          chmod -R +x /usr/local/vicar/dev/vos/bin/
+          chmod -R +x ${{ github.workspace }}/vos/bin/
       
       - name: Run basic VICAR tests
-        working-directory: /usr/local/vicar/dev/vos
+        working-directory: ${{ github.workspace }}/vos
         run: |
           # Source VICAR environment
-          export V2TOP=/usr/local/vicar/dev/vos
+          export V2TOP=${{ github.workspace }}/vos
           export VICSYS=DEVELOPMENT
           
           # Create vicset1.csh for PROJ_OS
