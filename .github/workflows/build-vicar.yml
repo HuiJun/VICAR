@@ -36,17 +36,34 @@ env:
 
 jobs:
   build-vicar:
-    name: Build VICAR on RHEL 8
-    runs-on: ubuntu-latest
-    container:
-      # Rocky Linux 8 - 100% RHEL 8 compatible, free and open source
-      # Binary compatible with Oracle Linux 8 and RHEL 8 (matches internal JPL build environment)
-      # Full package repository access, no subscription needed
-      image: rockylinux:8
-      options: --privileged
+    name: Build VICAR on ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Linux x86_64 (RHEL 8)"
+            runner: ubuntu-latest
+            arch: x86-64-linx
+            container: rockylinux:8
+            external_name: vicar_open_ext_x86-64-linx_5.0.tar.gz
+            use_container: true
+          - name: "macOS x86_64"
+            runner: macos-13  # Intel Mac
+            arch: x86-macosx
+            external_name: vicar_open_ext_mac64-osx_5.0.tar.gz
+            use_container: false
+          - name: "macOS arm64 (Apple Silicon)"
+            runner: macos-latest  # M1/M2 Mac
+            arch: mac64-osx
+            external_name: vicar_open_ext_mac64-osx_5.0.tar.gz
+            use_container: false
+    
+    container: ${{ matrix.config.use_container && matrix.config.container || null }}
     
     steps:
-      - name: Install Git and basic tools
+      - name: Install Git and basic tools (Linux)
+        if: matrix.config.use_container
         run: |
           dnf -y install git git-lfs curl wget
           
@@ -55,41 +72,55 @@ jobs:
           git config --global user.email "vicar-build@github-actions"
           git config --global user.name "VICAR Build"
       
-      - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          lfs: false  # We'll handle LFS manually
-          fetch-depth: 1  # Shallow clone for faster checkout
-          persist-credentials: false
-          submodules: false  # Don't initialize submodules
-        continue-on-error: true  # Continue even if submodule cleanup fails
-      
-      - name: Fix submodule configuration
+      - name: Install dependencies (macOS)
+        if: ${{ !matrix.config.use_container }}
         run: |
-          # Remove submodule configuration if it exists and is causing issues
-          if [ -f .gitmodules ]; then
-            echo "Found .gitmodules, removing it to prevent issues"
-            rm -f .gitmodules
-          fi
+          # Install Homebrew packages
+          brew install git-lfs tcsh gcc gfortran openjdk@8
           
-          # Remove git submodule config
+          # Configure git
+          git config --global user.email "vicar-build@github-actions"
+          git config --global user.name "VICAR Build"
+      
+      - name: Checkout repository
+        run: |
+          # Manual git clone to avoid submodule issues
+          cd $GITHUB_WORKSPACE
+          
+          # Clone the repository
+          git clone --depth 1 --branch ${GITHUB_REF#refs/heads/} \
+            https://github.com/${GITHUB_REPOSITORY}.git repo || \
+          git clone --depth 1 \
+            https://github.com/${GITHUB_REPOSITORY}.git repo
+          
+          # Move contents to workspace root
+          shopt -s dotglob
+          mv repo/* . 2>/dev/null || true
+          rm -rf repo
+          
+          # Remove submodule configuration to prevent issues
+          rm -f .gitmodules
           git config --local --remove-section submodule.vos/vicar_gdalplugin 2>/dev/null || true
           
-          # Verify checkout succeeded
+          # Verify checkout
           if [ ! -d "vos" ]; then
-            echo "ERROR: vos directory not found after checkout!"
+            echo "ERROR: vos directory not found!"
             exit 1
           fi
           
-          echo "Repository checked out successfully"
+          echo "Repository cloned successfully"
           ls -la
       
-      - name: Pull LFS files
+      - name: Pull LFS files (if needed)
         run: |
-          git lfs install
-          git lfs pull || echo "LFS pull had issues, continuing..."
+          cd $GITHUB_WORKSPACE
+          if [ -d ".git" ]; then
+            git lfs install 2>/dev/null || true
+            git lfs pull 2>/dev/null || echo "LFS pull skipped or had issues, continuing..."
+          fi
       
-      - name: Install system dependencies
+      - name: Install system dependencies (Linux)
+        if: matrix.config.use_container
         run: |
           # Enable PowerTools and EPEL repositories for additional development packages
           dnf install -y dnf-plugins-core epel-release
@@ -145,7 +176,8 @@ jobs:
           dnf clean all
           rm -rf /var/cache/dnf
       
-      - name: Setup VICAR environment
+      - name: Setup VICAR environment (Linux)
+        if: matrix.config.use_container
         run: |
           # Create symlinks for libraries
           ln -sf /lib64/libtcl8.6.so /lib64/libtcl.so
@@ -173,25 +205,44 @@ jobs:
           chmod -R +rw $GITHUB_WORKSPACE
           chmod -R +X $GITHUB_WORKSPACE
       
+      - name: Setup VICAR environment (macOS)
+        if: ${{ !matrix.config.use_container }}
+        run: |
+          # Create symlinks for Java
+          sudo ln -sfn /opt/homebrew/opt/openjdk@8/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-8.jdk || \
+            sudo ln -sfn /usr/local/opt/openjdk@8/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-8.jdk
+          
+          # Verify vos directory exists
+          if [ ! -d "$GITHUB_WORKSPACE/vos" ]; then
+            echo "ERROR: vos directory not found in workspace!"
+            exit 1
+          fi
+          
+          echo "macOS environment ready"
+          ls -la $GITHUB_WORKSPACE
+      
       - name: Download VICAR externals
         env:
           EXTERNAL_VERSION: ${{ github.event.inputs.external_version || '5.0' }}
+          EXTERNAL_FILE: ${{ matrix.config.external_name }}
         run: |
           # Download externals to parent directory of vos (where build_open_vicar.csh expects them)
           cd $GITHUB_WORKSPACE
           
-          echo "Downloading VICAR externals version ${EXTERNAL_VERSION}..."
-          curl -L -o vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz \
-            https://github.com/NASA-AMMOS/VICAR/releases/download/${EXTERNAL_VERSION}/vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz
+          echo "Downloading VICAR externals: ${EXTERNAL_FILE}..."
+          curl -L -o externals.tar.gz \
+            https://github.com/NASA-AMMOS/VICAR/releases/download/${EXTERNAL_VERSION}/${EXTERNAL_FILE}
           
           echo "Extracting externals..."
-          tar -zxf vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz
-          rm vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz
+          tar -zxf externals.tar.gz
+          rm externals.tar.gz
           
           # Rename extracted directory to 'external' (build expects this name)
-          if [ -d "vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}" ]; then
-            mv vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION} external
-            echo "Renamed vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION} to external"
+          # The tarball extracts to a versioned directory name
+          EXTRACTED_DIR=$(ls -d vicar_open_ext_* 2>/dev/null | head -1)
+          if [ -n "$EXTRACTED_DIR" ] && [ -d "$EXTRACTED_DIR" ]; then
+            mv "$EXTRACTED_DIR" external
+            echo "Renamed $EXTRACTED_DIR to external"
           fi
           
           echo "Externals extracted successfully"
@@ -359,7 +410,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: vicar-build-logs
+          name: vicar-build-logs-${{ matrix.config.arch }}
           path: |
             ${{ github.workspace }}/vos/build_*.log
             ${{ github.workspace }}/vos/fetch_*.log
@@ -372,12 +423,12 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v5
         with:
-          name: vicar-binaries
+          name: vicar-binaries-${{ matrix.config.arch }}
           path: |
-            ${{ github.workspace }}/vos/bin/
-            ${{ github.workspace }}/vos/lib/
+            ${{ github.workspace }}/vos/bin/**
+            ${{ github.workspace }}/vos/lib/**
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
       
       - name: Generate build status badge data
         if: always()
@@ -413,7 +464,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v5
         with:
-          name: vicar-binaries
+          name: vicar-binaries-x86-64-linx
           path: ${{ github.workspace }}/vos/
       
       - name: Setup environment
@@ -459,8 +510,9 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: vicar-binaries
+          pattern: vicar-binaries-*
           path: ./vicar-binaries
+          merge-multiple: true
       
       - name: Create release archive
         run: |
