@@ -1,0 +1,356 @@
+name: Build VICAR
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+      - 'feature/**'
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+  schedule:
+    # Weekly build every Sunday at midnight UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      external_version:
+        description: 'VICAR externals version to use'
+        required: false
+        default: '5.0'
+      enable_debug:
+        description: 'Enable debug output'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  V2TOP: /usr/local/vicar/dev/vos
+  VICSYS: DEVELOPMENT
+  GIT_LFS_SKIP_SMUDGE: 1
+
+jobs:
+  build-vicar:
+    name: Build VICAR on RHEL 8
+    runs-on: ubuntu-latest
+    container:
+      # Red Hat UBI 8 (Universal Base Image) - RHEL 8 compatible
+      # Matches internal JPL build environment (Oracle Linux 8 / RHEL 8)
+      image: registry.access.redhat.com/ubi8/ubi:latest
+      options: --privileged
+    
+    steps:
+      - name: Install Git and basic tools
+        run: |
+          dnf -y install git git-lfs curl wget
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 0
+      
+      - name: Install system dependencies
+        run: |
+          # Enable CodeReady Builder repository for additional packages
+          dnf install -y dnf-plugins-core
+          dnf config-manager --set-enabled codeready-builder-for-rhel-8-x86_64-rpms || true
+          
+          # Install dependencies
+          dnf -y install \
+              sudo \
+              rpm-build \
+              rsync \
+              tcsh \
+              cpp \
+              gcc-c++ \
+              gcc-gfortran \
+              perl \
+              imake \
+              make \
+              cmake \
+              libtool \
+              jasper-devel \
+              automake \
+              libcurl-devel \
+              postgresql-devel \
+              unixODBC-devel \
+              pcre-devel \
+              libpng-devel \
+              libtiff-devel \
+              libjpeg-turbo-devel \
+              java-1.8.0-openjdk-devel \
+              libX11-devel \
+              libXt-devel \
+              libXmu-devel \
+              libXp-devel \
+              libXpm-devel \
+              libXext-devel \
+              motif-devel \
+              ncurses-devel \
+              mesa-libGL-devel \
+              mesa-libGLU-devel \
+              libtirpc-devel \
+              tcl-devel \
+              sqlite-devel \
+              jbigkit-libs \
+              patch \
+              expat-devel \
+              libbsd-devel \
+              tbb-devel \
+              krb5-devel \
+              libcom_err-devel \
+              systemd-devel \
+              libxml2-devel \
+              openssl-libs
+          dnf clean all
+          rm -rf /var/cache/dnf
+      
+      - name: Setup VICAR environment
+        run: |
+          # Create symlinks for libraries
+          ln -sf /lib64/libtcl8.6.so /lib64/libtcl.so
+          ln -sf /lib64/libtk8.6.so /lib64/libtk.so
+          ln -sf /lib64/libcrypto.so.1.1.1k /lib64/libcrypto.so || \
+            ln -sf /lib64/libcrypto.so.3 /lib64/libcrypto.so
+          ln -s /usr/lib/jvm/java-openjdk /usr/java
+          
+          # Setup shell
+          rm -f /bin/csh && ln -s /bin/tcsh /bin/csh
+          ln -s /usr/include/tirpc/rpc/rpc.h /usr/include/rpc/rpc.h
+          
+          # Create VICAR directory structure
+          mkdir -p /usr/local/vicar/dev
+          cp -r $GITHUB_WORKSPACE /usr/local/vicar/dev
+          
+          # Set permissions
+          chmod -R +rw /usr/local/vicar/
+          chmod -R +X /usr/local/vicar/
+      
+      - name: Download VICAR externals
+        env:
+          EXTERNAL_VERSION: ${{ github.event.inputs.external_version || '5.0' }}
+        run: |
+          cd /usr/local/vicar
+          
+          echo "Downloading VICAR externals version ${EXTERNAL_VERSION}..."
+          curl -L -o vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz \
+            https://github.com/NASA-AMMOS/VICAR/releases/download/${EXTERNAL_VERSION}/vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz
+          
+          echo "Extracting externals..."
+          tar -zxf vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz
+          rm vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz
+          
+          echo "Externals downloaded and extracted successfully"
+      
+      - name: Enable debug mode
+        if: ${{ github.event.inputs.enable_debug == 'true' }}
+        run: |
+          echo "Debug mode enabled"
+          set -x
+      
+      - name: Build VICAR
+        working-directory: /usr/local/vicar/dev/vos
+        run: |
+          # Make scripts executable
+          chmod +x util/*.csh
+          chmod +x *.csh
+          
+          # Run the open source build script
+          echo "Starting VICAR build at $(date)"
+          tcsh build_open_vicar.csh
+          echo "Build completed at $(date)"
+        timeout-minutes: 180
+      
+      - name: Check build logs for errors
+        if: always()
+        working-directory: /usr/local/vicar/dev/vos
+        run: |
+          echo "=== Checking build logs for errors ==="
+          
+          # Function to check a log file
+          check_log() {
+            local logfile=$1
+            if [ -f "$logfile" ]; then
+              echo ""
+              echo "=== $logfile ==="
+              if grep -i "error\|fatal\|fail" "$logfile" | head -20; then
+                echo "Found potential issues in $logfile"
+              else
+                echo "No critical errors found in $logfile"
+              fi
+            else
+              echo "$logfile not found"
+            fi
+          }
+          
+          # Check all build logs
+          check_log "build_tae53_x86-64-linx.log"
+          check_log "fetch_tae53.log"
+          check_log "build_opens1_x86-64-linx.log"
+          check_log "build_java.log"
+          check_log "build_opens2_x86-64-linx.log"
+      
+      - name: Create build summary
+        if: always()
+        working-directory: /usr/local/vicar/dev/vos
+        run: |
+          echo "=== VICAR Build Summary ===" > build_summary.txt
+          echo "Build Date: $(date)" >> build_summary.txt
+          echo "Branch: $GITHUB_REF_NAME" >> build_summary.txt
+          echo "Commit: $GITHUB_SHA" >> build_summary.txt
+          echo "Workflow: $GITHUB_WORKFLOW" >> build_summary.txt
+          echo "Run Number: $GITHUB_RUN_NUMBER" >> build_summary.txt
+          echo "" >> build_summary.txt
+          
+          # Check if key directories were created
+          echo "=== Build Artifacts Check ===" >> build_summary.txt
+          
+          if [ -d "bin" ]; then
+            echo "Number of binaries in bin/: $(ls -1 bin/ 2>/dev/null | wc -l)" >> build_summary.txt
+            echo "Sample binaries:" >> build_summary.txt
+            ls -1 bin/ 2>/dev/null | head -10 >> build_summary.txt
+          else
+            echo "bin/ directory not found" >> build_summary.txt
+          fi
+          
+          echo "" >> build_summary.txt
+          
+          if [ -d "lib" ]; then
+            echo "Number of libraries in lib/: $(ls -1 lib/ 2>/dev/null | wc -l)" >> build_summary.txt
+          else
+            echo "lib/ directory not found" >> build_summary.txt
+          fi
+          
+          echo "" >> build_summary.txt
+          echo "=== Disk Usage ===" >> build_summary.txt
+          du -sh /usr/local/vicar 2>/dev/null >> build_summary.txt || echo "Could not determine disk usage"
+          
+          cat build_summary.txt
+      
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vicar-build-logs
+          path: |
+            /usr/local/vicar/dev/vos/build_*.log
+            /usr/local/vicar/dev/vos/fetch_*.log
+            /usr/local/vicar/dev/vos/build_summary.txt
+            /usr/local/vicar/dev/vos/LOG
+          retention-days: 30
+          if-no-files-found: warn
+      
+      - name: Upload build artifacts (binaries)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vicar-binaries
+          path: |
+            /usr/local/vicar/dev/vos/bin/
+            /usr/local/vicar/dev/vos/lib/
+          retention-days: 7
+          if-no-files-found: warn
+      
+      - name: Generate build status badge data
+        if: always()
+        run: |
+          # Create a simple status file that can be used for badges
+          mkdir -p /tmp/badge
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "passing" > /tmp/badge/status.txt
+          else
+            echo "failing" > /tmp/badge/status.txt
+          fi
+          echo "Build completed with status: $(cat /tmp/badge/status.txt)"
+
+  # Optional: Test job that runs after successful build
+  test-vicar:
+    name: Test VICAR Installation
+    needs: build-vicar
+    runs-on: ubuntu-latest
+    if: false  # Set to true to enable testing
+    container:
+      # Red Hat UBI 8 (same as build job)
+      image: registry.access.redhat.com/ubi8/ubi:latest
+      options: --privileged
+    
+    steps:
+      - name: Install basic tools
+        run: |
+          dnf -y install git curl tcsh
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: vicar-binaries
+          path: /usr/local/vicar/dev/vos/
+      
+      - name: Setup environment
+        run: |
+          # Setup environment for testing
+          ln -s /bin/tcsh /bin/csh
+          chmod -R +x /usr/local/vicar/dev/vos/bin/
+      
+      - name: Run basic VICAR tests
+        working-directory: /usr/local/vicar/dev/vos
+        run: |
+          # Source VICAR environment
+          export V2TOP=/usr/local/vicar/dev/vos
+          export VICSYS=DEVELOPMENT
+          
+          # Create vicset1.csh for PROJ_OS
+          chmod +x util/*.csh
+          util/process_project_file.csh vicset1.source PROJ_OS > vicset1.csh
+          
+          # Test environment setup
+          source vicset1.csh
+          source vicset2.csh
+          
+          echo "VICAR environment setup complete"
+          echo "V2TOP: $V2TOP"
+          echo "VICCPU: $VICCPU"
+          
+          # Add more specific tests here as needed
+          # Example: test if a VICAR program runs
+          # $V2BIN/list --help || echo "list command not available"
+
+  # Job to create a release on successful build (only for tags)
+  create-release:
+    name: Create Release
+    needs: build-vicar
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: vicar-binaries
+          path: ./vicar-binaries
+      
+      - name: Create release archive
+        run: |
+          cd vicar-binaries
+          tar -czf ../vicar-build-${{ github.ref_name }}.tar.gz .
+          cd ..
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            vicar-build-${{ github.ref_name }}.tar.gz
+          draft: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
