@@ -48,11 +48,6 @@ jobs:
             container: rockylinux:8
             external_name: vicar_open_ext_x86-64-linx_5.0.tar.gz
             use_container: true
-          - name: "macOS x86_64"
-            runner: macos-15-large  # Intel Mac - macOS 15 (x86_64)
-            arch: x86-macosx
-            external_name: vicar_open_ext_mac64-osx_5.0.tar.gz
-            use_container: false
           - name: "macOS arm64 (Apple Silicon)"
             runner: macos-15  # Apple Silicon - macOS 15 (arm64), same as macos-latest
             arch: mac64-osx
@@ -76,22 +71,33 @@ jobs:
         if: ${{ !matrix.config.use_container }}
         run: |
           # Install Homebrew packages
-          brew install git-lfs tcsh gcc gfortran openjdk@8
+          # Note: openjdk@8 is no longer available on macOS 15, using openjdk@11 instead
+          brew install git-lfs tcsh gcc gfortran openjdk@11
           
           # Configure git
           git config --global user.email "vicar-build@github-actions"
           git config --global user.name "VICAR Build"
       
       - name: Checkout repository
+        shell: bash
         run: |
           # Manual git clone to avoid submodule issues
           cd $GITHUB_WORKSPACE
           
           # Clone the repository
-          git clone --depth 1 --branch ${GITHUB_REF#refs/heads/} \
-            https://github.com/${GITHUB_REPOSITORY}.git repo || \
-          git clone --depth 1 \
-            https://github.com/${GITHUB_REPOSITORY}.git repo
+          if [ -n "${GITHUB_HEAD_REF}" ]; then
+            # Pull request - use the head ref
+            git clone --depth 1 --branch ${GITHUB_HEAD_REF} \
+              https://github.com/${GITHUB_REPOSITORY}.git repo
+          elif [ "${GITHUB_REF#refs/heads/}" != "${GITHUB_REF}" ]; then
+            # Branch push
+            git clone --depth 1 --branch ${GITHUB_REF#refs/heads/} \
+              https://github.com/${GITHUB_REPOSITORY}.git repo
+          else
+            # Tag or other ref
+            git clone --depth 1 \
+              https://github.com/${GITHUB_REPOSITORY}.git repo
+          fi
           
           # Move contents to workspace root
           shopt -s dotglob
@@ -112,6 +118,7 @@ jobs:
           ls -la
       
       - name: Pull LFS files (if needed)
+        shell: bash
         run: |
           cd $GITHUB_WORKSPACE
           if [ -d ".git" ]; then
@@ -207,10 +214,11 @@ jobs:
       
       - name: Setup VICAR environment (macOS)
         if: ${{ !matrix.config.use_container }}
+        shell: bash
         run: |
-          # Create symlinks for Java
-          sudo ln -sfn /opt/homebrew/opt/openjdk@8/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-8.jdk || \
-            sudo ln -sfn /usr/local/opt/openjdk@8/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-8.jdk
+          # Create symlinks for Java (using openjdk@11 instead of openjdk@8)
+          sudo ln -sfn /opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-11.jdk || \
+            sudo ln -sfn /usr/local/opt/openjdk@11/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-11.jdk
           
           # Verify vos directory exists
           if [ ! -d "$GITHUB_WORKSPACE/vos" ]; then
@@ -222,6 +230,7 @@ jobs:
           ls -la $GITHUB_WORKSPACE
       
       - name: Download VICAR externals
+        shell: bash
         env:
           EXTERNAL_VERSION: ${{ github.event.inputs.external_version || '5.0' }}
           EXTERNAL_FILE: ${{ matrix.config.external_name }}
@@ -261,11 +270,13 @@ jobs:
       
       - name: Enable debug mode
         if: ${{ github.event.inputs.enable_debug == 'true' }}
+        shell: bash
         run: |
           echo "Debug mode enabled"
           set -x
       
       - name: Pre-build verification
+        shell: bash
         run: |
           echo "=== Pre-build Verification ==="
           echo "V2TOP: $V2TOP"
@@ -293,6 +304,7 @@ jobs:
           fi
       
       - name: Build VICAR
+        shell: bash
         working-directory: ${{ github.workspace }}/vos
         run: |
           # Make scripts executable
@@ -318,6 +330,7 @@ jobs:
       
       - name: Check build logs for errors
         if: always()
+        shell: bash
         working-directory: ${{ github.workspace }}/vos
         run: |
           echo "=== Checking build logs for errors ==="
@@ -347,6 +360,7 @@ jobs:
       
       - name: Create build summary
         if: always()
+        shell: bash
         working-directory: ${{ github.workspace }}/vos
         run: |
           echo "=== VICAR Build Summary ===" > build_summary.txt
