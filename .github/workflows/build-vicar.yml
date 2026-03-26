@@ -50,7 +50,7 @@ jobs:
           dnf -y install git git-lfs curl wget
       
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           lfs: true
           fetch-depth: 0
@@ -143,7 +143,7 @@ jobs:
         env:
           EXTERNAL_VERSION: ${{ github.event.inputs.external_version || '5.0' }}
         run: |
-          # Download externals to parent directory of vos
+          # Download externals to parent directory of vos (where build_open_vicar.csh expects them)
           cd $GITHUB_WORKSPACE
           
           echo "Downloading VICAR externals version ${EXTERNAL_VERSION}..."
@@ -154,13 +154,58 @@ jobs:
           tar -zxf vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz
           rm vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}.tar.gz
           
-          echo "Externals downloaded and extracted successfully"
+          # Rename extracted directory to 'external' (build expects this name)
+          if [ -d "vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION}" ]; then
+            mv vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION} external
+            echo "Renamed vicar_open_ext_x86-64-linx_${EXTERNAL_VERSION} to external"
+          fi
+          
+          echo "Externals extracted successfully"
+          echo "Contents of workspace:"
+          ls -la $GITHUB_WORKSPACE
+          
+          # Verify external directory exists
+          if [ -d "$GITHUB_WORKSPACE/external" ]; then
+            echo "✓ External directory found"
+            echo "Contents of external/:"
+            ls -la $GITHUB_WORKSPACE/external | head -20
+          else
+            echo "✗ ERROR: external directory not found after extraction"
+            exit 1
+          fi
       
       - name: Enable debug mode
         if: ${{ github.event.inputs.enable_debug == 'true' }}
         run: |
           echo "Debug mode enabled"
           set -x
+      
+      - name: Pre-build verification
+        run: |
+          echo "=== Pre-build Verification ==="
+          echo "V2TOP: $V2TOP"
+          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
+          echo ""
+          echo "V2TOP contents:"
+          ls -la $V2TOP || echo "V2TOP directory not accessible"
+          echo ""
+          echo "Parent directory (should contain external/):"
+          ls -la $(dirname $V2TOP) || echo "Parent directory not accessible"
+          echo ""
+          echo "Checking for required files in V2TOP:"
+          [ -f "$V2TOP/build_open_vicar.csh" ] && echo "✓ build_open_vicar.csh found" || echo "✗ build_open_vicar.csh NOT found"
+          [ -f "$V2TOP/vicset1.source" ] && echo "✓ vicset1.source found" || echo "✗ vicset1.source NOT found"
+          [ -d "$V2TOP/util" ] && echo "✓ util/ directory found" || echo "✗ util/ directory NOT found"
+          echo ""
+          echo "Checking for externals:"
+          if [ -d "$(dirname $V2TOP)/external" ]; then
+            echo "✓ external/ directory found"
+            ls -la $(dirname $V2TOP)/external | head -10
+          else
+            echo "✗ external/ directory NOT found - build may fail"
+            echo "Contents of parent directory:"
+            ls -la $(dirname $V2TOP)
+          fi
       
       - name: Build VICAR
         working-directory: ${{ github.workspace }}/vos
@@ -171,8 +216,19 @@ jobs:
           
           # Run the open source build script
           echo "Starting VICAR build at $(date)"
-          tcsh build_open_vicar.csh
-          echo "Build completed at $(date)"
+          echo "V2TOP is: $V2TOP"
+          echo "Current directory: $(pwd)"
+          ls -la
+          
+          # Run build with error checking
+          if tcsh build_open_vicar.csh; then
+            echo "Build completed successfully at $(date)"
+          else
+            echo "ERROR: Build failed with exit code $?"
+            echo "Checking for build logs..."
+            ls -la *.log 2>/dev/null || echo "No log files found"
+            exit 1
+          fi
         timeout-minutes: 180
       
       - name: Check build logs for errors
@@ -243,7 +299,7 @@ jobs:
       
       - name: Upload build logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: vicar-build-logs
           path: |
@@ -256,7 +312,7 @@ jobs:
       
       - name: Upload build artifacts (binaries)
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: vicar-binaries
           path: |
@@ -294,10 +350,10 @@ jobs:
           dnf -y install git curl tcsh
       
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: vicar-binaries
           path: ${{ github.workspace }}/vos/
