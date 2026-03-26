@@ -61,6 +61,7 @@ jobs:
           lfs: false  # We'll handle LFS manually
           fetch-depth: 1  # Shallow clone for faster checkout
           persist-credentials: false
+          submodules: false  # Don't initialize submodules
       
       - name: Pull LFS files
         run: |
