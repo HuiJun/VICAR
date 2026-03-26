@@ -32,6 +32,7 @@ env:
   V2TOP: ${{ github.workspace }}/vos
   VICSYS: DEVELOPMENT
   GIT_LFS_SKIP_SMUDGE: 1
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-vicar:
@@ -48,12 +49,23 @@ jobs:
       - name: Install Git and basic tools
         run: |
           dnf -y install git git-lfs curl wget
+          
+          # Configure git for container environment
+          git config --global --add safe.directory '*'
+          git config --global user.email "vicar-build@github-actions"
+          git config --global user.name "VICAR Build"
       
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          lfs: true
-          fetch-depth: 0
+          lfs: false  # We'll handle LFS manually
+          fetch-depth: 1  # Shallow clone for faster checkout
+          persist-credentials: false
+      
+      - name: Pull LFS files
+        run: |
+          git lfs install
+          git lfs pull || echo "LFS pull had issues, continuing..."
       
       - name: Install system dependencies
         run: |
@@ -276,24 +288,48 @@ jobs:
           echo "=== Build Artifacts Check ===" >> build_summary.txt
           
           if [ -d "bin" ]; then
-            echo "Number of binaries in bin/: $(ls -1 bin/ 2>/dev/null | wc -l)" >> build_summary.txt
-            echo "Sample binaries:" >> build_summary.txt
-            ls -1 bin/ 2>/dev/null | head -10 >> build_summary.txt
+            BIN_COUNT=$(ls -1 bin/ 2>/dev/null | wc -l)
+            echo "✓ bin/ directory found with $BIN_COUNT files" >> build_summary.txt
+            if [ $BIN_COUNT -gt 0 ]; then
+              echo "Sample binaries:" >> build_summary.txt
+              ls -1 bin/ 2>/dev/null | head -10 >> build_summary.txt
+            else
+              echo "⚠ WARNING: bin/ directory is empty!" >> build_summary.txt
+            fi
           else
-            echo "bin/ directory not found" >> build_summary.txt
+            echo "✗ bin/ directory not found - build failed" >> build_summary.txt
           fi
           
           echo "" >> build_summary.txt
           
           if [ -d "lib" ]; then
-            echo "Number of libraries in lib/: $(ls -1 lib/ 2>/dev/null | wc -l)" >> build_summary.txt
+            LIB_COUNT=$(ls -1 lib/ 2>/dev/null | wc -l)
+            echo "✓ lib/ directory found with $LIB_COUNT files" >> build_summary.txt
           else
-            echo "lib/ directory not found" >> build_summary.txt
+            echo "✗ lib/ directory not found" >> build_summary.txt
+          fi
+          
+          echo "" >> build_summary.txt
+          
+          # Check for x86-64-linx specific directories
+          if [ -d "bin/x86-64-linx" ]; then
+            ARCH_BIN_COUNT=$(ls -1 bin/x86-64-linx 2>/dev/null | wc -l)
+            echo "✓ bin/x86-64-linx/ found with $ARCH_BIN_COUNT programs" >> build_summary.txt
           fi
           
           echo "" >> build_summary.txt
           echo "=== Disk Usage ===" >> build_summary.txt
           du -sh $GITHUB_WORKSPACE 2>/dev/null >> build_summary.txt || echo "Could not determine disk usage"
+          
+          echo "" >> build_summary.txt
+          echo "=== Build Status ===" >> build_summary.txt
+          if [ -d "bin" ] && [ $BIN_COUNT -gt 50 ]; then
+            echo "✓ BUILD APPEARS SUCCESSFUL" >> build_summary.txt
+            echo "  $BIN_COUNT binaries created" >> build_summary.txt
+          else
+            echo "⚠ BUILD MAY HAVE ISSUES" >> build_summary.txt
+            echo "  Expected >50 binaries, found $BIN_COUNT" >> build_summary.txt
+          fi
           
           cat build_summary.txt
       
