@@ -433,23 +433,81 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
       
+      - name: Verify build artifacts before upload
+        if: success()
+        shell: bash
+        working-directory: ${{ github.workspace }}/vos
+        run: |
+          echo "=== Verifying Build Artifacts ==="
+          echo ""
+          echo "Checking for built files in architecture-specific directories..."
+          echo ""
+          
+          ARCH="${{ matrix.config.arch }}"
+          TOTAL_FILES=0
+          
+          # Function to check directory and count files
+          check_dir() {
+            local dir=$1
+            if [ -d "$dir" ]; then
+              local count=$(find "$dir" -type f | wc -l)
+              echo "✓ $dir exists with $count files"
+              TOTAL_FILES=$((TOTAL_FILES + count))
+              if [ $count -gt 0 ]; then
+                echo "  Sample files:"
+                find "$dir" -type f | head -5
+              fi
+            else
+              echo "✗ $dir does not exist"
+            fi
+            echo ""
+          }
+          
+          # Check all expected directories
+          check_dir "p1/lib/$ARCH"
+          check_dir "p2/lib/$ARCH"
+          check_dir "p3/lib/$ARCH"
+          check_dir "mars/lib/$ARCH"
+          check_dir "gui/lib/$ARCH"
+          check_dir "vids/lib/$ARCH"
+          check_dir "vrdi/lib/$ARCH"
+          check_dir "crumbs/bin/$ARCH"
+          check_dir "tae53/lib"
+          check_dir "lib/$ARCH"
+          check_dir "olb/$ARCH"
+          
+          echo "=== Summary ==="
+          echo "Total files found: $TOTAL_FILES"
+          
+          if [ $TOTAL_FILES -eq 0 ]; then
+            echo "ERROR: No build artifacts found!"
+            echo ""
+            echo "Checking alternative locations..."
+            echo "Contents of vos/:"
+            ls -la .
+            echo ""
+            echo "Looking for any .a, .so, or executable files:"
+            find . -type f \( -name "*.a" -o -name "*.so" -o -perm -111 \) | head -20
+            exit 1
+          fi
+      
       - name: Upload build artifacts (binaries)
         if: success()
         uses: actions/upload-artifact@v5
         with:
           name: vicar-binaries-${{ matrix.config.arch }}
           path: |
-            ${{ github.workspace }}/vos/p1/lib/${{ matrix.config.arch }}/
-            ${{ github.workspace }}/vos/p2/lib/${{ matrix.config.arch }}/
-            ${{ github.workspace }}/vos/p3/lib/${{ matrix.config.arch }}/
-            ${{ github.workspace }}/vos/mars/lib/${{ matrix.config.arch }}/
-            ${{ github.workspace }}/vos/gui/lib/${{ matrix.config.arch }}/
-            ${{ github.workspace }}/vos/vids/lib/${{ matrix.config.arch }}/
-            ${{ github.workspace }}/vos/vrdi/lib/${{ matrix.config.arch }}/
-            ${{ github.workspace }}/vos/crumbs/bin/${{ matrix.config.arch }}/
-            ${{ github.workspace }}/vos/tae53/lib/
-            ${{ github.workspace }}/vos/lib/${{ matrix.config.arch }}/
-            ${{ github.workspace }}/vos/olb/${{ matrix.config.arch }}/
+            vos/p1/lib/${{ matrix.config.arch }}/**
+            vos/p2/lib/${{ matrix.config.arch }}/**
+            vos/p3/lib/${{ matrix.config.arch }}/**
+            vos/mars/lib/${{ matrix.config.arch }}/**
+            vos/gui/lib/${{ matrix.config.arch }}/**
+            vos/vids/lib/${{ matrix.config.arch }}/**
+            vos/vrdi/lib/${{ matrix.config.arch }}/**
+            vos/crumbs/bin/${{ matrix.config.arch }}/**
+            vos/tae53/lib/**
+            vos/lib/${{ matrix.config.arch }}/**
+            vos/olb/${{ matrix.config.arch }}/**
           retention-days: 7
           if-no-files-found: error
       
