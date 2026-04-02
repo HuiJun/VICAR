@@ -438,6 +438,7 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}/vos
         run: |
+          set +e  # Don't exit on SIGPIPE
           echo "=== Verifying Build Artifacts ==="
           echo ""
           echo "Checking for built files in architecture-specific directories..."
@@ -450,12 +451,15 @@ jobs:
           check_dir() {
             local dir=$1
             if [ -d "$dir" ]; then
-              local count=$(find "$dir" -type f | wc -l)
+              local count=$(find "$dir" -type f 2>/dev/null | wc -l)
               echo "✓ $dir exists with $count files"
               TOTAL_FILES=$((TOTAL_FILES + count))
-              if [ $count -gt 0 ]; then
+              if [ $count -gt 0 ] && [ $count -le 10 ]; then
                 echo "  Sample files:"
-                find "$dir" -type f | head -5
+                find "$dir" -type f 2>/dev/null | head -5 || true
+              elif [ $count -gt 10 ]; then
+                echo "  Sample files (showing 5 of $count):"
+                find "$dir" -type f 2>/dev/null | head -5 || true
               fi
             else
               echo "✗ $dir does not exist"
@@ -487,9 +491,11 @@ jobs:
             ls -la .
             echo ""
             echo "Looking for any .a, .so, or executable files:"
-            find . -type f \( -name "*.a" -o -name "*.so" -o -perm -111 \) | head -20
+            find . -type f \( -name "*.a" -o -name "*.so" -o -perm -111 \) 2>/dev/null | head -20 || true
             exit 1
           fi
+          
+          set -e  # Re-enable exit on error
       
       - name: Upload build artifacts (binaries)
         if: success()
