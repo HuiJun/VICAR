@@ -363,45 +363,49 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}/vos
         run: |
+          set +e  # Don't exit on errors in summary
           echo "=== VICAR Build Summary ===" > build_summary.txt
           echo "Build Date: $(date)" >> build_summary.txt
           echo "Branch: $GITHUB_REF_NAME" >> build_summary.txt
           echo "Commit: $GITHUB_SHA" >> build_summary.txt
           echo "Workflow: $GITHUB_WORKFLOW" >> build_summary.txt
           echo "Run Number: $GITHUB_RUN_NUMBER" >> build_summary.txt
+          echo "Architecture: ${{ matrix.config.arch }}" >> build_summary.txt
           echo "" >> build_summary.txt
           
           # Check if key directories were created
           echo "=== Build Artifacts Check ===" >> build_summary.txt
+          ARCH="${{ matrix.config.arch }}"
+          TOTAL_FILES=0
           
-          if [ -d "bin" ]; then
-            BIN_COUNT=$(ls -1 bin/ 2>/dev/null | wc -l)
-            echo "✓ bin/ directory found with $BIN_COUNT files" >> build_summary.txt
-            if [ $BIN_COUNT -gt 0 ]; then
-              echo "Sample binaries:" >> build_summary.txt
-              ls -1 bin/ 2>/dev/null | head -10 >> build_summary.txt
-            else
-              echo "⚠ WARNING: bin/ directory is empty!" >> build_summary.txt
+          # Count files in all lib directories
+          for dir in p1/lib/$ARCH p2/lib/$ARCH p3/lib/$ARCH mars/lib/$ARCH gui/lib/$ARCH vids/lib/$ARCH vrdi/lib/$ARCH lib/$ARCH olb/$ARCH tae53/lib; do
+            if [ -d "$dir" ]; then
+              COUNT=$(find "$dir" -type f 2>/dev/null | wc -l)
+              TOTAL_FILES=$((TOTAL_FILES + COUNT))
+              if [ $COUNT -gt 0 ]; then
+                echo "✓ $dir found with $COUNT files" >> build_summary.txt
+              fi
             fi
-          else
-            echo "✗ bin/ directory not found - build failed" >> build_summary.txt
+          done
+          
+          # Check for crumbs binaries
+          if [ -d "crumbs/bin/$ARCH" ]; then
+            CRUMBS_COUNT=$(find "crumbs/bin/$ARCH" -type f 2>/dev/null | wc -l)
+            TOTAL_FILES=$((TOTAL_FILES + CRUMBS_COUNT))
+            if [ $CRUMBS_COUNT -gt 0 ]; then
+              echo "✓ crumbs/bin/$ARCH found with $CRUMBS_COUNT files" >> build_summary.txt
+            fi
           fi
           
           echo "" >> build_summary.txt
-          
-          if [ -d "lib" ]; then
-            LIB_COUNT=$(ls -1 lib/ 2>/dev/null | wc -l)
-            echo "✓ lib/ directory found with $LIB_COUNT files" >> build_summary.txt
-          else
-            echo "✗ lib/ directory not found" >> build_summary.txt
-          fi
+          echo "Total build artifacts: $TOTAL_FILES files" >> build_summary.txt
           
           echo "" >> build_summary.txt
-          
-          # Check for x86-64-linx specific directories
-          if [ -d "bin/x86-64-linx" ]; then
-            ARCH_BIN_COUNT=$(ls -1 bin/x86-64-linx 2>/dev/null | wc -l)
-            echo "✓ bin/x86-64-linx/ found with $ARCH_BIN_COUNT programs" >> build_summary.txt
+          echo "=== Sample Build Outputs ===" >> build_summary.txt
+          if [ -d "p2/lib/$ARCH" ]; then
+            echo "Sample files from p2/lib/$ARCH:" >> build_summary.txt
+            find "p2/lib/$ARCH" -type f 2>/dev/null | head -10 >> build_summary.txt
           fi
           
           echo "" >> build_summary.txt
@@ -410,15 +414,19 @@ jobs:
           
           echo "" >> build_summary.txt
           echo "=== Build Status ===" >> build_summary.txt
-          if [ -d "bin" ] && [ $BIN_COUNT -gt 50 ]; then
-            echo "✓ BUILD APPEARS SUCCESSFUL" >> build_summary.txt
-            echo "  $BIN_COUNT binaries created" >> build_summary.txt
+          if [ $TOTAL_FILES -gt 100 ]; then
+            echo "✓ BUILD SUCCESSFUL" >> build_summary.txt
+            echo "  $TOTAL_FILES artifacts created" >> build_summary.txt
+          elif [ $TOTAL_FILES -gt 0 ]; then
+            echo "⚠ BUILD PARTIALLY SUCCESSFUL" >> build_summary.txt
+            echo "  $TOTAL_FILES artifacts created (expected more)" >> build_summary.txt
           else
-            echo "⚠ BUILD MAY HAVE ISSUES" >> build_summary.txt
-            echo "  Expected >50 binaries, found $BIN_COUNT" >> build_summary.txt
+            echo "✗ BUILD FAILED" >> build_summary.txt
+            echo "  No artifacts found" >> build_summary.txt
           fi
           
           cat build_summary.txt
+          set -e
       
       - name: Upload build logs
         if: always()
